@@ -246,16 +246,8 @@ int main(void) {
             std::string tmp;
             while(sf.good()) {
                 c = sf.peek();
-                if(isalnum(c) || isblank(c) || c == '\n') {
-                    if(auto t = is_in(alg_op, tmp); t!= -1) {
-                        tokens.emplace_back(TokenType::ALG_OP, tmp, t);
-                        token_output(tokens.back(), row, col++);
-                    } else if(auto t = is_in(cmp_op, tmp); t!= -1) {
-                        tokens.emplace_back(TokenType::CMP_OP, tmp, t);
-                        token_output(tokens.back(), row, col++);
-                    } else {
-                        error_output(tmp, row, col++);
-                    }
+                if(isalnum(c) || isblank(c) || c == '\n' || c == EOF) {
+                    
                     break;
                 } else {
                     if(auto p = is_in(sep, c); p != -1) {
@@ -280,6 +272,16 @@ int main(void) {
                     }
                 }
             }
+
+           if(auto t = is_in(alg_op, tmp); t!= -1) {
+                tokens.emplace_back(TokenType::ALG_OP, tmp, t);
+                token_output(tokens.back(), row, col++);
+            } else if(auto t = is_in(cmp_op, tmp); t!= -1) {
+                tokens.emplace_back(TokenType::CMP_OP, tmp, t);
+                token_output(tokens.back(), row, col++);
+            } else {
+                error_output(tmp, row, col++);
+            } 
 
        }
     }
