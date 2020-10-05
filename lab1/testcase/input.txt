@@ -1,0 +1,9 @@
+8
+do end for it printf scanf then while
+6
+( ) [ ] ; ,
+4
++ - * /
+6
+< <= = > >= <>
+./book.txt
