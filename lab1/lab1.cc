@@ -6,6 +6,7 @@
 #include <cctype>
 #include <fstream>
 #include <algorithm>
+#include <iomanip>
 
 enum class TokenType {
     KEYWORD,
@@ -21,6 +22,11 @@ struct Token {
     TokenType type;
     std::string st;
     int p;
+    Token(const TokenType tt, const std::string s, const int cp) {
+        type = tt;
+        st = s;
+        p = cp;
+    };
 };
 
 template<typename T>
@@ -151,18 +157,25 @@ void token_output(Token token, int row, int col) {
         break;
     }
 
-    std::cout 
-        << token.st<< "\t\t"
-        << '(' << static_cast<int>(token.type) << ", "
-        << token.st<< ')' << "\t\t"
-        << st << "\t\t"
-        << '(' << row << ", " << col << ')'
+    std::string rc = std::string{"("} + std::to_string(row) + std::string{", "} + std::to_string(col) + std::string{")"};
+    std::string ts = std::string{"("} + std::to_string(static_cast<int>(token.type)) + std::string{", "} + token.st + std::string{")"};
+    std::cout << std::left << std::setw(20)
+        << token.st << std::left << std::setw(20)
+        << ts << std::left << std::setw(20)
+        << st << std::left << std::setw(20)
+        << rc 
         << std::endl;
 }
 
 void error_output(std::string st, int row, int col) {
-    std::cout << st << "\t\tError\t\tError\t\t"
-        << '(' << row << ", " << col << ')'
+
+    std::string rc = std::string{"("} + std::to_string(row) + std::string{", "} + std::to_string(col) + std::string{")"};
+    
+    std::cout << std::left << std::setw(20)
+        << st << std::left << std::setw(20)
+        << "Error" << std::left << std::setw(20) 
+        << "Error" << std::left << std::setw(20) 
+        << rc
         << std::endl;
 }
 
@@ -189,9 +202,8 @@ int main(void) {
     std::ifstream sf;
     sf.open(fn);
 
-    size_t row = 0, col = 0;
+    size_t row = 1, col = 1;
     char c;
-
     sf.unsetf(std::ios_base::skipws);
     while(sf.good()) {
         c = sf.peek();
@@ -247,7 +259,6 @@ int main(void) {
             while(sf.good()) {
                 c = sf.peek();
                 if(isalnum(c) || isblank(c) || c == '\n' || c == EOF) {
-                    
                     break;
                 } else {
                     if(auto p = is_in(sep, c); p != -1) {
@@ -258,8 +269,10 @@ int main(void) {
                             } else if(auto t = is_in(cmp_op, tmp); t!= -1) {
                                 tokens.emplace_back(TokenType::CMP_OP, tmp, t);
                                 token_output(tokens.back(), row, col++);
+                                tmp = "";
                             } else {
                                 error_output(tmp, row, col++);
+                                tmp = "";
                             }
                         }
                         tokens.emplace_back(TokenType::SEPARATOR, std::string{c}, p);
@@ -272,16 +285,18 @@ int main(void) {
                     }
                 }
             }
-
-           if(auto t = is_in(alg_op, tmp); t!= -1) {
-                tokens.emplace_back(TokenType::ALG_OP, tmp, t);
-                token_output(tokens.back(), row, col++);
-            } else if(auto t = is_in(cmp_op, tmp); t!= -1) {
-                tokens.emplace_back(TokenType::CMP_OP, tmp, t);
-                token_output(tokens.back(), row, col++);
-            } else {
-                error_output(tmp, row, col++);
-            } 
+            if(tmp.size()) {
+                if(auto t = is_in(alg_op, tmp); t!= -1) {
+                    tokens.emplace_back(TokenType::ALG_OP, tmp, t);
+                    token_output(tokens.back(), row, col++);
+                } else if(auto t = is_in(cmp_op, tmp); t!= -1) {
+                    tokens.emplace_back(TokenType::CMP_OP, tmp, t);
+                    token_output(tokens.back(), row, col++);
+                } else {
+                    error_output(tmp, row, col++);
+                }
+            }
+             
 
        }
     }
