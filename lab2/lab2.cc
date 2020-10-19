@@ -8,7 +8,6 @@
 #include <iomanip>
 
 
-#define DEBUG
 
 class Symbol{
     enum class Type{
@@ -83,6 +82,9 @@ class Symbol{
 };
 
 
+
+
+
 std::map<char, Symbol> symsGen(const std::vector<std::string> & productions) {
     std::map<char, Symbol> smap;
     for(auto && x : productions) {
@@ -103,7 +105,6 @@ std::map<char, Symbol> symsGen(const std::vector<std::string> & productions) {
         } else {
             smap[x[0]].setAsNonTerminal(x.substr(pos + 2));
         }
-
         // process content at the right of "->"
         for(size_t i = pos + 2; i < x.size(); ++i) {
             if(smap.find(x[i]) == smap.end()) {
@@ -115,8 +116,157 @@ std::map<char, Symbol> symsGen(const std::vector<std::string> & productions) {
             }
         }
     }
-
     return smap;
+}
+
+
+std::map<char, Symbol> removeLeftRecur(const std::map<char, Symbol> & syms) {
+    bool upper[26] = {false}, lower[26] = {false};
+    for(auto && [x,y] : syms) {
+        if(x >= 'a' && x <= 'z') {
+            lower[x - 'a'] = true;
+        }
+
+        if(x >= 'A' && x <= 'Z') {
+            upper[x - 'A'] = true;
+        }
+    }
+
+    auto getNextUnusedChar = [upper, lower]() mutable -> char{
+        for(int i = 0; i < 26; ++i) {
+            if(!upper[i]) {
+                upper[i] = true;
+                return 'A' + i;
+            }
+
+            if(!lower[i]) {
+                lower[i] = true;
+                return 'a' + i;
+            }
+        }
+        return 0;
+    };
+    
+
+    // first step, rewrite the productions
+    // ref : http://www.cs.nuim.ie/~jpower/Courses/Previous/parsing/node30.html
+    auto ret1 = syms;
+
+    std::map<char, int> order_map;
+    std::vector<char> nonterminal_order;
+    for(auto && [x,y] : syms) {
+        if(!y.isTerminal()) {
+            order_map[x] = nonterminal_order.size();
+            nonterminal_order.push_back(x);
+        }
+    }
+
+    std::vector<std::string> candidates;
+    for(int i = 0; i < nonterminal_order.size(); ++i) {
+
+        candidates.clear();
+
+        auto && symbol = syms.at(nonterminal_order[i]);
+
+        bool replace_occur = false;
+
+        for(auto && st : symbol.getCandidates()) {
+            char leftchar = st[0];
+            if(auto && lower_symbol = syms.at(leftchar); !lower_symbol.isTerminal() && order_map.at(leftchar) < i) {
+                replace_occur = true;
+                std::string alpha = {st.begin() + 1, st.end()};
+                for(auto && lst : lower_symbol.getCandidates()) {
+                    if(lst[0] == '?') {
+                        candidates.push_back(alpha);
+                    } else {
+                        candidates.push_back(lst + alpha);
+                    }
+                }
+            } else {
+                candidates.push_back(st);
+            }
+        }
+
+        std::string nstr{""};
+
+        for(auto && x : candidates) {
+            nstr += x + '|';
+        }
+        nstr.pop_back();
+        ret1[symbol.getChar()].setAsNonTerminal(nstr);
+        if(replace_occur) {
+            --i;
+        }
+    }
+
+    // second step, remove direct recursion
+    auto ret2 = ret1;
+    std::vector<std::string> alpha, beta;
+
+    for(auto && [x,y] : ret1) {
+        if(y.isTerminal()) {
+            continue;
+        }
+
+
+        for(auto && st : y.getCandidates()) {
+            if(st[0] == x) {
+                alpha.push_back({st.begin() + 1, st.end()});
+            } else {
+                beta.push_back({st.begin(), st.end()});
+            }
+        }
+
+        if(alpha.size()) {
+            char nc = getNextUnusedChar();
+            Symbol nsym{nc};
+            std::string ostr{""}, nstr{""};
+
+            for(auto && betastr : beta) {
+                ostr += (betastr + nc) + "|";
+            }
+            ostr.pop_back();
+            ret2[x].setAsNonTerminal(ostr);
+
+            for(auto && alphastr : alpha) {
+                nstr += (alphastr + nc) + "|";
+            }
+            nstr.push_back('?');
+            nsym.setAsNonTerminal(nstr);
+            ret2[nc] = nsym;
+            alpha.clear();
+        }
+        beta.clear();
+    }
+    return ret2;
+
+}
+
+std::map<char, Symbol> leftFactoring(const std::map<char, Symbol> & syms) {
+    bool upper[26] = {false}, lower[26] = {false};
+    for(auto && [x,y] : syms) {
+        if(x >= 'a' && x <= 'z') {
+            lower[x - 'a'] = true;
+        }
+
+        if(x >= 'A' && x <= 'Z') {
+            upper[x - 'A'] = true;
+        }
+    }
+
+    auto getNextUnusedChar = [upper, lower]() -> char{
+        for(int i = 0; i < 26; ++i) {
+            if(!upper[i]) {
+                return 'A' + i;
+            }
+
+            if(!lower[i]) {
+                return 'a' + i;
+            }
+        }
+        return 0;
+    };
+    return syms;
 }
 
 
@@ -320,7 +470,9 @@ int main(void) {
     }
 
     auto syms = symsGen(productions);
-    auto [first, follow, nullable] = firstfollowSetGen(syms);
+    auto syms1 = removeLeftRecur(syms);
+    auto syms2 = leftFactoring(syms);
+    auto [first, follow, nullable] = firstfollowSetGen(syms2);
     auto table = predictTableGen(syms, first, follow, nullable);
 
 #ifdef DEBUG
@@ -357,9 +509,6 @@ int main(void) {
         }
     }
 #endif // DEBUG
-
     predictiveAnalysis(table, "i*i+i", 'E');
-
-
     return 0;
 }
