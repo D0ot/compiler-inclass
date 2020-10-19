@@ -45,7 +45,7 @@ class Symbol{
             auto start = 0U;
             auto end = s.find(d);
             while(end != std::string::npos) {
-                v.emplace_back(s.substr(start, end));
+                v.emplace_back(s.substr(start, end - start));
                 start = end + 1;
                 end = s.find(d, start);
             }
@@ -81,9 +81,19 @@ class Symbol{
     }
 };
 
+auto myunion(const auto& s1, const auto &s2) {
+    std::remove_cvref_t<decltype(s1)> tmp;
+    std::insert_iterator ins{tmp, tmp.begin()};
+    std::set_union(s1.cbegin(), s1.cend(), s2.cbegin(), s2.cend(), ins);
+    return tmp;
+};
 
-
-
+auto myintersec(const auto& s1, const auto &s2) {
+    std::remove_cvref_t<decltype(s1)> tmp;
+    std::insert_iterator ins{tmp, tmp.begin()};
+    std::set_intersection(s1.cbegin(), s1.cend(), s2.cbegin(), s2.cend(), ins);
+    return tmp;
+};
 
 std::map<char, Symbol> symsGen(const std::vector<std::string> & productions) {
     std::map<char, Symbol> smap;
@@ -166,13 +176,13 @@ std::map<char, Symbol> removeLeftRecur(const std::map<char, Symbol> & syms) {
 
         candidates.clear();
 
-        auto && symbol = syms.at(nonterminal_order[i]);
+        auto && symbol = ret1.at(nonterminal_order[i]);
 
         bool replace_occur = false;
 
         for(auto && st : symbol.getCandidates()) {
             char leftchar = st[0];
-            if(auto && lower_symbol = syms.at(leftchar); !lower_symbol.isTerminal() && order_map.at(leftchar) < i) {
+            if(auto && lower_symbol = ret1.at(leftchar); !lower_symbol.isTerminal() && order_map.at(leftchar) < i) {
                 replace_occur = true;
                 std::string alpha = {st.begin() + 1, st.end()};
                 for(auto && lst : lower_symbol.getCandidates()) {
@@ -199,8 +209,9 @@ std::map<char, Symbol> removeLeftRecur(const std::map<char, Symbol> & syms) {
         }
     }
 
-    // second step, remove direct recursion
+    // second step, remove direct left recursion
     auto ret2 = ret1;
+     
     std::vector<std::string> alpha, beta;
 
     for(auto && [x,y] : ret1) {
@@ -242,7 +253,27 @@ std::map<char, Symbol> removeLeftRecur(const std::map<char, Symbol> & syms) {
 
 }
 
-std::map<char, Symbol> leftFactoring(const std::map<char, Symbol> & syms) {
+auto firstSetOfSentence(const std::string & s,
+const std::map<char, Symbol> & syms,
+const std::map<char, std::set<char> > & first,
+const std::map<char, bool> & nullable) {
+    std::set<char> ret;
+    for(auto && x : s) {
+        ret = myunion(ret , first.at(x));
+        if(!nullable.at(x)) {
+            break;
+        }
+    }
+    return ret; 
+}
+
+
+
+bool checkLL(const std::map<char, Symbol> & syms, 
+const std::map<char, std::set<char>> first,
+const std::map<char, std::set<char>> follow,
+const std::map<char, bool> nullable) {
+        
     bool upper[26] = {false}, lower[26] = {false};
     for(auto && [x,y] : syms) {
         if(x >= 'a' && x <= 'z') {
@@ -266,7 +297,31 @@ std::map<char, Symbol> leftFactoring(const std::map<char, Symbol> & syms) {
         }
         return 0;
     };
-    return syms;
+
+
+    for(auto && [x,y] : syms) {
+        if(nullable.at(x)) {
+            if(myunion(first.at(x), follow.at(x)).size()) {
+                return false;
+            }
+        }
+
+        if(!y.isTerminal()) {
+            auto && candidates = y.getCandidates();
+            
+            for(int i = 0; i < candidates.size(); ++i) {
+                for(int j = i + 1; j < candidates.size(); ++j) {
+                    auto s1 = firstSetOfSentence(candidates[i], syms, first, nullable);
+                    auto s2 = firstSetOfSentence(candidates[j], syms, first, nullable);
+                    if(myunion(s1,s2).size()) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    return true;
 }
 
 
@@ -289,19 +344,7 @@ auto firstfollowSetGen(const std::map<char, Symbol> &smap) {
 
     nullable['?'] = true;
 
-    auto myintersec = [](const auto &s1, const auto &s2) {
-        std::remove_cvref_t<decltype(s1)> tmp;
-        std::insert_iterator ins{tmp, tmp.begin()};
-        std::set_intersection(s1.cbegin(), s1.cend(), s2.cbegin(), s2.cend(), ins);
-        return tmp;
-    };
-
-    auto myunion = [](const auto& s1, const auto &s2) {
-        std::remove_cvref_t<decltype(s1)> tmp;
-        std::insert_iterator ins{tmp, tmp.begin()};
-        std::set_union(s1.cbegin(), s1.cend(), s2.cbegin(), s2.cend(), ins);
-        return tmp;
-    };
+    
 
     bool flag = true;
     while(flag) {
@@ -329,37 +372,29 @@ auto firstfollowSetGen(const std::map<char, Symbol> &smap) {
                 }
 
 
-
-                auto pos2 = (long)(p.size() - 1);
-                while(pos2 >= 0 && nullable[p[pos2]]) {
-                    auto old = follow[p[pos2]].size();
-                    follow[p[pos2]] = myunion(follow[p[pos2]], follow[x]);
-                    if(old != follow[p[pos2]].size()) {
-                        flag = true;
-                    }
-                    --pos2;
-                }
-
-                if(pos2 >= 0) {
-                    auto old = follow[p[pos2]].size();
-                    follow[p[pos2]] = myunion(follow[p[pos2]], follow[x]);
-                    if(old != follow[p[pos2]].size()) {
-                        flag = true;
-                    }
-                }
-                
                 auto all = [&nullable](auto c, auto start, auto end){
-                    bool ret = true;
                     for(auto i = start; i < end; ++i) {
-                        ret = ret && nullable[c[i]];
+                        if(!nullable[c[i]]) {
+                            return false;
+                        }
                     }
-                    return ret;
+                    return true;
                 };
 
 
-                for(auto i = 0; p.size() && i < p.size() - 1; ++i) {
+                for(auto i = 0; i < p.size(); ++i) {
+                    if(all(p, i+1, p.size())) {
+                        auto old = follow[p[i+1]].size();
+                        follow[p[i]] = myunion(follow[x], follow[p[i]]);
+                        if(old != follow[p[i+1]].size()) {
+                            flag = true;
+                        }
+                    }
+                }
+
+                for(auto i = 0; i < p.size() - 1; ++i) {
                     for(auto j = i + 1; j < p.size(); ++j) {
-                        if(all(p, i + 1, j - 1)) {
+                        if(all(p, i+1, j)) {
                             auto old = follow[p[i]].size();
                             follow[p[i]] = myunion(follow[p[i]], first[p[j]]);
                             if(old != follow[p[i]].size()) {
@@ -414,6 +449,7 @@ auto predictTableGen(const std::map<char, Symbol> syms,const std::map<char, std:
     return ret;
 }
 
+
 void predictiveAnalysis(const std::map<char, std::map<char, std::string>> table, const std::string & in,const char start) {
     std::string sym_stack;
     size_t input_pos = 0;
@@ -458,6 +494,7 @@ void predictiveAnalysis(const std::map<char, std::map<char, std::string>> table,
         }
     }
 }
+#define DEBUG
 
 int main(void) {
     std::vector<std::string> productions;
@@ -471,13 +508,12 @@ int main(void) {
 
     auto syms = symsGen(productions);
     auto syms1 = removeLeftRecur(syms);
-    auto syms2 = leftFactoring(syms);
-    auto [first, follow, nullable] = firstfollowSetGen(syms2);
-    auto table = predictTableGen(syms, first, follow, nullable);
+    auto [first, follow, nullable] = firstfollowSetGen(syms1);
+    auto table = predictTableGen(syms1, first, follow, nullable);
+
 
 #ifdef DEBUG
-
-    for(auto && [x, y] : syms) {
+    for(auto && [x, y] : syms1) {
         y.print();
         std::cout << std::endl;
     }
