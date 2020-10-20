@@ -2,8 +2,8 @@ import sys
 import PySide2
 from PySide2.QtGui import QFont
 from PySide2.QtUiTools import QUiLoader
-from PySide2.QtWidgets import QApplication, QWidget, QLabel, QTableWidget, QTableWidgetItem
-from PySide2.QtWidgets import QListWidget, QListWidgetItem
+from PySide2.QtWidgets import QApplication, QHeaderView, QWidget, QLabel, QTableWidget, QTableWidgetItem
+from PySide2.QtWidgets import QListWidget, QListWidgetItem, QMessageBox
 from PySide2.QtCore import QFile, QIODevice, QSize
 import subprocess
 
@@ -13,6 +13,12 @@ import subprocess
 
 def parseTheOutput(output_str):
     
+    def parseCheck(opstr):
+        che_start = "CHECK_START#"
+        che_end = "CHECK_END#"
+        start_index = opstr.index(che_start)
+        end_index = opstr.index(che_end)
+        return opstr[start_index+1] == "1"
     def parseProduction(opstr):
         pro_start = "PRODUCTIONS_START#"
         pro_end = "PRODUCTIONS_END#"
@@ -108,7 +114,8 @@ def parseTheOutput(output_str):
     ,parseFollow(tmp_lines)
     ,parseNul(tmp_lines)
     ,parseTab(tmp_lines)
-    ,parseProcess(tmp_lines))
+    ,parseProcess(tmp_lines)
+    ,parseCheck(tmp_lines))
 
 
 
@@ -159,7 +166,13 @@ if __name__ == "__main__":
         proc.wait()
         result = proc.stdout.read().decode()
 
-        (prods, fsts, fols, nuls, tabs, procs) = parseTheOutput(result)
+        (prods, fsts, fols, nuls, tabs, procs, check) = parseTheOutput(result)
+
+        check_status = window.check_status
+        if not check :
+            check_status.setText("LL(1) Check Not Passed")
+        else:
+            check_status.setText("LL(1) Check Passed")
 
         prods_qtlist = window.productions_list
         prods_qtlist.clear()
@@ -184,6 +197,8 @@ if __name__ == "__main__":
                 table.setItem(i, 1, item)
                 item.setFont(font)
                 i = i + 1
+            
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
             return table
         
         def genListByList(lst):
@@ -214,6 +229,7 @@ if __name__ == "__main__":
                 table.setItem(i, 1, item2)
                 table.setItem(i, 2, item3)
                 i = i + 1
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
             return table
         

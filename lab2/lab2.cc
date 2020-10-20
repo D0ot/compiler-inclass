@@ -9,6 +9,7 @@
 
 
 
+
 class Symbol{
     enum class Type{
         TERMINAL,
@@ -274,34 +275,12 @@ const std::map<char, std::set<char>> first,
 const std::map<char, std::set<char>> follow,
 const std::map<char, bool> nullable) {
         
-    bool upper[26] = {false}, lower[26] = {false};
     for(auto && [x,y] : syms) {
-        if(x >= 'a' && x <= 'z') {
-            lower[x - 'a'] = true;
-        }
-
-        if(x >= 'A' && x <= 'Z') {
-            upper[x - 'A'] = true;
-        }
-    }
-
-    auto getNextUnusedChar = [upper, lower]() -> char{
-        for(int i = 0; i < 26; ++i) {
-            if(!upper[i]) {
-                return 'A' + i;
-            }
-
-            if(!lower[i]) {
-                return 'a' + i;
-            }
-        }
-        return 0;
-    };
-
-
-    for(auto && [x,y] : syms) {
-        if(nullable.at(x)) {
-            if(myunion(first.at(x), follow.at(x)).size()) {
+        if(nullable.at(x) && !syms.at(x).isTerminal()) {
+            if(myintersec(first.at(x), follow.at(x)).size()) {
+                #ifdef DEBUG
+                std::cerr << "union of first follow " << x << std::endl;
+                #endif
                 return false;
             }
         }
@@ -313,7 +292,10 @@ const std::map<char, bool> nullable) {
                 for(int j = i + 1; j < candidates.size(); ++j) {
                     auto s1 = firstSetOfSentence(candidates[i], syms, first, nullable);
                     auto s2 = firstSetOfSentence(candidates[j], syms, first, nullable);
-                    if(myunion(s1,s2).size()) {
+                    if(myintersec(s1,s2).size()) {
+                        #ifdef DEBUG
+                        std::cerr << "union of two fist : " << candidates[i] << ','<< candidates[j] << std::endl;
+                        #endif
                         return false;
                     }
                 }
@@ -467,6 +449,10 @@ void predictiveAnalysis(const std::map<char, std::map<char, std::string>> table,
 
     };
 
+    auto error_print = [](const std::string & e1, const std::string & e2){
+        std::cout << "ERROR" << '\t' << e1 << '\t' << e2 <<std::endl;
+    };
+
     while(!sym_stack.empty() && input_pos != input.size()) {
         char c = input[input_pos];
 
@@ -479,10 +465,17 @@ void predictiveAnalysis(const std::map<char, std::map<char, std::string>> table,
             continue;
         }
 
+
+        if(table.find(sym_stack.back()) == table.cend()) {
+            error_print("Not Found in Predictive Table", sym_stack.back() + std::string{", "} + c);
+            return;
+        }
+
         auto && subtable = table.at(sym_stack.back());
         if(subtable.find(c) == subtable.cend()) {
             // not found
-            std::cout << "Error\n";
+            error_print("Not Found in Predictive Table", sym_stack.back() + std::string{", "} + c);
+            return;
         } else {
             auto && p = subtable.at(c);
             std::string tmp = std::string{sym_stack.back()} + std::string{"->"} + p;
@@ -492,11 +485,18 @@ void predictiveAnalysis(const std::map<char, std::map<char, std::string>> table,
 
             if(p[0] != '?')
             for(auto i = (long)(p.size() - 1); i >= 0; --i) {
-                last_sym_stack = sym_stack;
                 sym_stack.push_back(p[i]);
             }
             pretty_print(tmp);
         }
+    }
+
+    if(!sym_stack.empty()) {
+        error_print("Symbol Stack not Empty", "Input String is empty");
+    }
+
+    if(input_pos != input.size() ) {
+        error_print("Symbol Stack is empty", "Input String not empty");
     }
 }
 
@@ -556,6 +556,12 @@ int main(void) {
         }
     }
 #endif // DEBUG
+
+    bool check = checkLL(syms1, first, follow, nullable);
+    std::cout << "CHECK_START#\n";
+    std::cout << check << '\n';
+    std::cout << "CHECK_END#\n";
+
 
     std::cout <<"PRODUCTIONS_START#\n";
     for(auto && [x,y] : syms1) {
