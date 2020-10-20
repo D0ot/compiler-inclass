@@ -500,17 +500,27 @@ int main(void) {
     std::vector<std::string> productions;
     int n;
     std::cin >> n;
-    std::string tmp;
+    std::string tmp, sentence;
     while(n--) {
         std::cin >> tmp;
         productions.push_back(tmp);
     }
+    std::cin >> sentence;
 
     auto syms = symsGen(productions);
     auto syms1 = removeLeftRecur(syms);
     auto [first, follow, nullable] = firstfollowSetGen(syms1);
     auto table = predictTableGen(syms1, first, follow, nullable);
 
+/* design a json object
+{
+    productions : array of strings
+    first      : array of strings
+    follow: array of strings
+    table   : ((x,y), production)
+    process : three arrays of strings
+}
+*/
 
 #ifdef DEBUG
     for(auto && [x, y] : syms1) {
@@ -546,9 +556,7 @@ int main(void) {
     }
 #endif // DEBUG
 
-    
-
-    predictiveAnalysis(table, "i*i+i", 'E');
+    predictiveAnalysis(table, sentence, 'S');
     std::cout << std::endl;
     return 0;
 }

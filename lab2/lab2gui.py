@@ -34,11 +34,8 @@ if __name__ == "__main__":
         proc.stdin.write(backend_stdin.encode())
         proc.stdin.close()
         proc.wait()
-        result = proc.stdout.read()
-        print(result.decode())
-
+        result = proc.stdout.read().decode()
     window.llanalysis_button.clicked.connect(llanalysis_clicked)
-
     window.show()
     sys.exit(app.exec_())
 
