@@ -325,7 +325,7 @@ const std::map<char, bool> nullable) {
 }
 
 
-auto firstfollowSetGen(const std::map<char, Symbol> &smap) {
+auto firstfollowSetGen(const std::map<char, Symbol> &smap, char start) {
     std::map<char, std::set<char>> first;
     std::map<char, std::set<char>> follow;
     std::map<char, bool> nullable;
@@ -343,6 +343,7 @@ auto firstfollowSetGen(const std::map<char, Symbol> &smap) {
     }
 
     nullable['?'] = true;
+    follow[start].emplace('#');
 
     
 
@@ -458,11 +459,11 @@ void predictiveAnalysis(const std::map<char, std::map<char, std::string>> table,
     auto input = in;
     input.push_back('#');
 
-    auto pretty_print = [&sym_stack, &input_pos, &input](const std::string & p) {
-        std::cout << std::left << std::setw(12) 
-        << sym_stack << std::left << std::setw(12)
-        << (input.c_str() + input_pos) << std::left << std::setw(12)
-        << p << std::endl;
+    std::string last_sym_stack = in;
+    size_t last_input_pos = 0;
+
+    auto pretty_print = [&last_sym_stack, &last_input_pos, &input](const std::string & p) {
+        std::cout << last_sym_stack << '\t' << (input.c_str() + last_input_pos) << '\t' << p << std::endl;
 
     };
 
@@ -470,7 +471,9 @@ void predictiveAnalysis(const std::map<char, std::map<char, std::string>> table,
         char c = input[input_pos];
 
         if(c == sym_stack.back()) {
+            last_sym_stack = sym_stack;
             sym_stack.pop_back();
+            last_input_pos = input_pos;
             input_pos++;
             pretty_print("GETNEXT()");
             continue;
@@ -483,24 +486,32 @@ void predictiveAnalysis(const std::map<char, std::map<char, std::string>> table,
         } else {
             auto && p = subtable.at(c);
             std::string tmp = std::string{sym_stack.back()} + std::string{"->"} + p;
+            last_sym_stack = sym_stack;
             sym_stack.pop_back();
 
 
             if(p[0] != '?')
             for(auto i = (long)(p.size() - 1); i >= 0; --i) {
+                last_sym_stack = sym_stack;
                 sym_stack.push_back(p[i]);
             }
             pretty_print(tmp);
         }
     }
 }
-#define DEBUG
+
+
+
 
 int main(void) {
     std::vector<std::string> productions;
     int n;
     std::cin >> n;
+    --n;
     std::string tmp, sentence;
+    std::cin >> tmp;
+    productions.push_back(tmp);
+    char start_char = tmp[0];
     while(n--) {
         std::cin >> tmp;
         productions.push_back(tmp);
@@ -509,18 +520,8 @@ int main(void) {
 
     auto syms = symsGen(productions);
     auto syms1 = removeLeftRecur(syms);
-    auto [first, follow, nullable] = firstfollowSetGen(syms1);
+    auto [first, follow, nullable] = firstfollowSetGen(syms1, start_char);
     auto table = predictTableGen(syms1, first, follow, nullable);
-
-/* design a json object
-{
-    productions : array of strings
-    first      : array of strings
-    follow: array of strings
-    table   : ((x,y), production)
-    process : three arrays of strings
-}
-*/
 
 #ifdef DEBUG
     for(auto && [x, y] : syms1) {
@@ -556,7 +557,60 @@ int main(void) {
     }
 #endif // DEBUG
 
-    predictiveAnalysis(table, sentence, 'S');
-    std::cout << std::endl;
+    std::cout <<"PRODUCTIONS_START#\n";
+    for(auto && [x,y] : syms1) {
+        if(!y.isTerminal()) {
+            std::cout << x << "->";
+            auto && candi = y.getCandidates();
+            for(int i = 0; i < candi.size() - 1; ++i) {
+                std::cout << candi[i] << '|';
+            }
+            std::cout << candi.back() << '\n';
+        }
+   }
+    std::cout <<"PRODUCTIONS_END#\n";
+
+
+
+    std::cout << "FIRST_START#\n";
+    for(auto && [x, y] : first) {
+        std::cout << x << ":";
+        for(auto && z : y) {
+            std::cout << z << ",";
+        };
+        std::cout << std::endl;
+    }
+    std::cout << "FIRST_END#\n";
+
+    std::cout << "FOLLOW_START#\n";
+    for(auto && [x, y] : follow) {
+        std::cout << x << ": ";
+        for(auto && z : y) {
+            std::cout << z << ", ";
+        };
+        std::cout << std::endl;
+    }
+    std::cout << "FOLLOW_END#\n";
+
+
+    std::cout << "NULLABLE_START#\n";
+    for(auto && [x,y] : nullable) {
+        std::cout << x << ":" << y << std::endl;
+    }
+    std::cout << "NULLABLE_END#\n";
+
+
+
+    std::cout << "TABLE_START#\n";
+    for(auto && [x1, y1] : table) {
+        for(auto && [x2, y2] : y1) {
+            std::cout << "T(" << x1 <<", " << x2 << ") = " << x1 << " -> " << y2 << std::endl;
+        }
+    }
+    std::cout << "TABLE_END#\n";
+
+    std::cout << "PROCESS_START#\n";
+    predictiveAnalysis(table, sentence, start_char);
+    std::cout << "PROCESS_END#\n";
     return 0;
 }
