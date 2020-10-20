@@ -545,6 +545,10 @@ int main(void) {
         }
     }
 #endif // DEBUG
+
+    
+
     predictiveAnalysis(table, "i*i+i", 'E');
+    std::cout << std::endl;
     return 0;
 }
