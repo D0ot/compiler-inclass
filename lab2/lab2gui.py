@@ -1,7 +1,10 @@
 import sys
+import PySide2
+from PySide2.QtGui import QFont
 from PySide2.QtUiTools import QUiLoader
-from PySide2.QtWidgets import QApplication
-from PySide2.QtCore import QFile, QIODevice
+from PySide2.QtWidgets import QApplication, QWidget, QLabel, QTableWidget, QTableWidgetItem
+from PySide2.QtWidgets import QListWidget, QListWidgetItem
+from PySide2.QtCore import QFile, QIODevice, QSize
 import subprocess
 
 
@@ -46,7 +49,7 @@ def parseTheOutput(output_str):
         follow = {}
         while(i != end_index):
             tmp = opstr[i].split(":")
-            if(len(tmp) == 2 and tmp[1] != ""):
+            if(len(tmp) == 2 and tmp[0] != "\0"):
                 follow[tmp[0]] = tmp[1][:-1]
             i = i + 1
         return follow
@@ -120,29 +123,115 @@ if __name__ == "__main__":
     loader = QUiLoader()
     window = loader.load(ui_file)
     ui_file.close()
+
     if not window:
         print(loader.errorString())
         sys.exit(-1)
+
+    def when_text_edit_clear():
+        window.input_text_box.setFontPointSize(16)
+        
+    window.input_text_box.textChanged.connect(when_text_edit_clear)
+
+
+
     
     def llanalysis_clicked():
         print("llanalysis_clicked")
+
         raw_str = window.input_text_box.toPlainText().strip()
         raw_str = raw_str.replace(" ", "")
         str_list = raw_str.split('\n')
         backend_stdin = str(len(str_list)) + "\n"
+
         for x in str_list:
             backend_stdin = backend_stdin + x + "\n"
+
         backend_stdin = backend_stdin + window.sentence_lineedit.text().strip()
         proc = subprocess.Popen('../build/lab2/lab2',stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+
         print("###")
         print(backend_stdin)
         print("###")
+
         proc.stdin.write(backend_stdin.encode())
         proc.stdin.close()
         proc.wait()
         result = proc.stdout.read().decode()
-        #print(result)
-        parseTheOutput(result)
+
+        (prods, fsts, fols, nuls, tabs, procs) = parseTheOutput(result)
+
+        prods_qtlist = window.productions_list
+        prods_qtlist.clear()
+        font = QFont()
+        font.setPointSize(16)
+        for x in prods:
+            item = QListWidgetItem(x)
+            item.setFont(font)
+            prods_qtlist.addItem(item)
+        
+        def genTableByDict(dct):
+            table = QTableWidget(len(dct), 2)
+            i = 0
+
+            font = QFont()
+            font.setPointSize(16)
+            for x in dct.keys():
+                item = QTableWidgetItem(" {} ".format(x))
+                table.setItem(i, 0, item)
+                item.setFont(font)
+                item = QTableWidgetItem(" {} ".format(dct[x]))
+                table.setItem(i, 1, item)
+                item.setFont(font)
+                i = i + 1
+            return table
+        
+        def genListByList(lst):
+            ret = QListWidget()
+            font = QFont()
+            font.setPointSize(16)
+            for x in lst:
+                item = QListWidgetItem(x)
+                item.setFont(font)
+                ret.addItem(item)
+            return ret
+
+        
+        def genTableByListTuple(lst_tuple):
+            st,inp,act = lst_tuple
+            table = QTableWidget(len(st), 3)
+            i = 0
+            font = QFont()
+            font.setPointSize(16)
+            while i < len(st):
+                item1 = QTableWidgetItem(" {} ".format(st[i]))
+                item1.setFont(font)
+                item2 = QTableWidgetItem(" {} ".format(inp[i]))
+                item2.setFont(font)
+                item3 = QTableWidgetItem(" {} ".format(act[i]))
+                item3.setFont(font)
+                table.setItem(i, 0, item1)
+                table.setItem(i, 1, item2)
+                table.setItem(i, 2, item3)
+                i = i + 1
+
+            return table
+        
+        
+        
+
+        # First, Follow, nuls, tabs, procs
+
+        tabwidget = window.tabwidget
+        tabwidget.clear()
+        tabwidget.addTab(genTableByDict(fsts), "FIRST Set")
+        tabwidget.addTab(genTableByDict(fols), "FOLLOW Set")
+        tabwidget.addTab(genTableByDict(nuls), "Nullable Set")
+        tabwidget.addTab(genListByList(tabs), "Predict Table")
+        tabwidget.addTab(genTableByListTuple(procs), "Process")
+        
+        
+        
 
     window.llanalysis_button.clicked.connect(llanalysis_clicked)
     window.show()

@@ -586,7 +586,7 @@ int main(void) {
     for(auto && [x, y] : follow) {
         std::cout << x << ": ";
         for(auto && z : y) {
-            std::cout << z << ", ";
+            std::cout << z << ",";
         };
         std::cout << std::endl;
     }
