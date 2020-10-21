@@ -1,6 +1,17 @@
 import sys
 
+class Token:
+    '''Token is represented as a string internally'''
+    TypeTerminal = 0
+    TypeNonTerminal = 1
+    def __init__(self, t:str, token_type:int):
+        self.val = t
+        self.type = token_type
+
 class TokenTable:
+    def error(self, st:str):
+        sys.stderr.write("TokenTable Error : {}".format(st))
+
     def __init__(self):
         self.nonterminal = {}
         self.terminal = {}
@@ -27,10 +38,10 @@ class TokenTable:
         return None
     
     def isTerminal(self, t:str):
-        return t in self.terminal:
+        return t in self.terminal
 
     def isNonTerminal(self, t:str):
-        return t in self.nonterminal:
+        return t in self.nonterminal
 
     def getTerminal(self):
         return self.terminal
@@ -38,19 +49,11 @@ class TokenTable:
     def getNonTerminal(self):
         return self.nonterminal
             
-class Token:
-    '''Token is represented as a string internally'''
-    TypeTerminal = 0
-    TypeNonTerminal = 1
-    def __init__(self, t:str, token_type:int):
-        self.val = t
-        self.type = token_type
-
 class Production:
     def error(self, st:str):
         sys.stderr.writable("Production error : {}".format(st))
 
-    def __init__(self, p:str):
+    def __init__(self, p:str, ttab:TokenTable):
         self.status = True
         arrow_index = p.find("->")
         if arrow_index == -1:
@@ -73,13 +76,22 @@ class Production:
             self.status = False
             self.error("4")
             return
-
         self.left_str = left_part[0]
-        self.candidates = right_part.split('|')
-    pass
+        self.candidates = right_part.strip().split('|')
         
+        left_token = 
+        
+
+class LRAnalyzer:
+    def __init__(self, pstr: list(str)):
+        
+        pass
+    
+    def analyze(self, sentence : str):
+        pass
 
 
 if __name__ == "__main__":
+    
 
     pass
