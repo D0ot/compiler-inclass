@@ -403,6 +403,47 @@ auto firstfollowSetGen(const std::map<char, Symbol> &smap, char start) {
     return std::make_tuple(first, follow, nullable);
 }
 
+auto removeRedundantSymbols(const std::map<char, Symbol> syms, char start) {
+    std::map<char, bool> vis;
+    std::vector<char> buf;
+    std::map<char, Symbol> ret;
+
+    buf.push_back(start);
+    while(!buf.empty()) {
+        char c = buf.back();
+        buf.pop_back();
+        if(vis[c]) {
+            continue;
+        }
+        vis[c] = true;
+        auto single_sym = syms.at(c);
+        if(!single_sym.isTerminal()) {
+            for(auto && st : single_sym.getCandidates()) {
+                for(auto && x : st) {
+                    if(x == '?') {
+                        continue;
+                    }
+                    if(!syms.at(x).isTerminal()) {
+                        buf.push_back(x);
+                    }
+                }
+            }
+        }
+    }
+
+    for(auto && [x,y] : syms) {
+        if(y.isTerminal()) {
+            ret[x] = y;
+        } else {
+            if(vis[x]) {
+                ret[x] = y;
+            }
+        }
+    }
+    return ret;
+
+}
+
 auto predictTableGen(const std::map<char, Symbol> syms,const std::map<char, std::set<char>> first, const std::map<char, std::set<char>> follow,const std::map<char, bool> nullable) {
     std::map<char, std::map<char, std::string>> ret;
     for(auto && [x,y] : syms) {
@@ -520,8 +561,9 @@ int main(void) {
 
     auto syms = symsGen(productions);
     auto syms1 = removeLeftRecur(syms);
-    auto [first, follow, nullable] = firstfollowSetGen(syms1, start_char);
-    auto table = predictTableGen(syms1, first, follow, nullable);
+    auto syms2 = removeRedundantSymbols(syms1, start_char);
+    auto [first, follow, nullable] = firstfollowSetGen(syms2, start_char);
+    auto table = predictTableGen(syms2, first, follow, nullable);
 
 #ifdef DEBUG
     for(auto && [x, y] : syms1) {
@@ -557,14 +599,14 @@ int main(void) {
     }
 #endif // DEBUG
 
-    bool check = checkLL(syms1, first, follow, nullable);
+    bool check = checkLL(syms2, first, follow, nullable);
     std::cout << "CHECK_START#\n";
     std::cout << check << '\n';
     std::cout << "CHECK_END#\n";
 
 
     std::cout <<"PRODUCTIONS_START#\n";
-    for(auto && [x,y] : syms1) {
+    for(auto && [x,y] : syms2) {
         if(!y.isTerminal()) {
             std::cout << x << "->";
             auto && candi = y.getCandidates();

@@ -1,0 +1,5 @@
+3
+S->Ra|a
+R->Qb|b
+Q->Sc|c
+a
