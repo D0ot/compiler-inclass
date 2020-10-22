@@ -156,6 +156,12 @@ class Item:
     
     def __hash__(self) -> int:
         return hash(self.__str__())
+    
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, Item):
+            raise TypeError("compare different types")
+        return self.__repr__() == o.__repr__()
+    
 
 class FirstSets:
 
@@ -252,7 +258,6 @@ class LRAnalyzer:
             prod = Production(x, self.ttab)
             self.productions[prod.left] = prod
         
-        
         self.eplision_token = self.ttab.getToken(eplision_str)
         self.argument_token = self.ttab.getToken(argument_str)
         self.orginal_start_token = self.ttab.getToken(self.productions[self.argument_token.val].rights[0][0])
@@ -294,10 +299,8 @@ class LRAnalyzer:
                 self.items[self.ttab.getToken(prod.left)] = tmp
     
     def generateClosureSet(self):
-        start_item = Item(self.argument_token, [self.orginal_start_token], 0, self.guard_token)
-        start_set = {start_item}
 
-        def closureHelper(iset:set):
+        def closureHelper(iset:frozenset):
             item_stack = []
             item_stack.extend(iset)
             ret_set = set()
@@ -320,40 +323,71 @@ class LRAnalyzer:
                             else:
                                 ret_set.update([new_item])
                                 item_stack.append(new_item)
-            return ret_set
+            return frozenset(ret_set)
         
-        def closureGoHelper(iset:set):
+        def GoHelper(iset:frozenset):
 
             ret_tmp = {}
 
-
-            def goHelper(item:Item) -> Item:
+            def goHelperStub(item:Item) -> Item:
                 new_item = copy(item)
                 new_item.pos = new_item.pos + 1
                 return new_item
 
-
             for item in iset:
                 item : Item
                 if item.closureGoable():
-                    new_item = goHelper(item)
+                    new_item = goHelperStub(item)
                     next_token = item.right_tokens[item.pos]
                     if not next_token in ret_tmp.keys():
                         ret_tmp[next_token] = []
                     ret_tmp[next_token].append(new_item)
 
-            return [closureHelper(set(x)) for x in ret_tmp.values()]
+            jmp_tmp = {}
+            for x in ret_tmp:
+                colsure_tmp = closureHelper(frozenset(ret_tmp[x]))
+                jmp_tmp[x] = colsure_tmp
+            return jmp_tmp
         
-
-                    
+        start_item = Item(self.argument_token, [self.orginal_start_token], 0, self.guard_token)
+        start_set = frozenset([start_item])
         first_closure = closureHelper(start_set)
-        print(first_closure)
-        sets = closureGoHelper(first_closure)
-        for x in sets:
-            print(x)
 
+        # used to temporary sotrage
+        closure_stack = [first_closure]
 
+        # to check if the set is unique in list named closure_stack
+        closures_unique = set()
+        closures_unique.add(first_closure)
+
+        # it is a dict of dicts
+        # can be used like : closures_jump_table[state][token]
+        closures_jump_table = {}
+
+        closures_storage = [first_closure]
+
+        closure_hash = [first_closure.__hash__()]
+
+        while len(closure_stack) != 0:
+            cur = closure_stack.pop()
+            closure_go_dict = GoHelper(cur)
+            state = closures_storage.index(cur)
+            if not state in closures_jump_table.keys():
+                closures_jump_table[state] = {}
+            
+            for k in closure_go_dict.keys():
+                if not closure_go_dict[k] in closures_unique:
+                    closures_storage.append(closure_go_dict[k])
+                    closures_unique.add(closure_go_dict[k])
+                    closure_stack.append(closure_go_dict[k])
+                    closure_hash.append(closure_go_dict[k].__hash__())
+                
+                next_state = closures_storage.index(closure_go_dict[k])
+                closures_jump_table[state][k] = next_state
         
+        self.closures_storage = closures_storage
+        self.closures_jump_table = closures_jump_table
+
     def __str__(self) -> str:
         return str(self.productions) + ", " + str(self.ttab) + str(self.items)
     
