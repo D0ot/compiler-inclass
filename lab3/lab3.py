@@ -1,8 +1,9 @@
-from os import stat, ttyname
 import sys
-from typing import FrozenSet, ItemsView, Type
-from copy import Error, copy, deepcopy
+from copy import copy
 
+from PySide2.QtCore import *
+from PySide2.QtWidgets import *
+from PySide2.QtUiTools import *
 
 class Token:
     '''Token is represented as a string internally'''
@@ -53,12 +54,31 @@ class TokenTable:
             return self.tokens[t]
         else:
             return None
+    
+    def terminalCount(self):
+        cnt = 0
+        for v in self.tokens.values():
+            if v.isTerminal():
+                cnt += 1
+        return cnt
+
+
+    def nonTerminalCount(self):
+        cnt = 0
+        for v in self.tokens.values():
+            if v.isNonTerminal():
+                cnt += 1
+        return cnt
+
 
     def isTerminal(self, t:str):
         return t in self.tokens and self.tokens[t].type == Token.TypeTerminal
 
     def isNonTerminal(self, t:str):
         return t in self.tokens and self.tokens[t].type == Token.TypeNonTerminal
+    
+    def inTable(self, t:str):
+        return t in self.tokens
     
     def __str__(self) -> str:
         return str(self.tokens)
@@ -174,11 +194,11 @@ class Item:
 
 class FirstSets:
 
-    first_sets = {}
-    nullable = {}
 
     def __init__(self, productions, ttab:TokenTable, eplision):
         self.eplision = eplision
+        self.first_sets = {}
+        self.nullable = {}
 
         tokens = ttab.tokens
         for x in tokens.keys():
@@ -252,14 +272,12 @@ class LRAnalyzer:
         Reduce = 1
 
     ''' productions are special, indexed by string '''
-    productions = {}
-
-    ttab = TokenTable()
-    items = {}
-    lr_check = True
 
     def __init__(self, pstr: list, eplision_str, argument_str, guard_str):
 
+        self.productions = {}
+        self.items = {}
+        self.ttab = TokenTable()
         self.eplision = Token(eplision_str, Token.TypeTerminal)
 
         orginal_first_prod = Production(pstr[0], self.ttab)
@@ -285,18 +303,29 @@ class LRAnalyzer:
         self.generateClosureSet()
         conflict_list = self.generateAction()
         if len(conflict_list) != 0:
-            lr_check = False
-
-
-        l = list(self.closures_jump_table.keys())
-        l.sort()
-        for x in l:
-            print(x, self.closures_jump_table[x])
-
+            self.lr_check = False
+        else:
+            self.lr_check = True
+        self.conflict_list = conflict_list
 
     def checkLR(self):
         return self.lr_check
     
+    def stateCount(self):
+        return len(self.closures_storage)
+
+    def terminalCount(self):
+        return self.ttab.terminalCount()
+
+    def nonTerminalCount(self):
+        return self.ttab.nonTerminalCount()
+    
+    def getTerminal(self):
+        return list(filter(lambda t : t.isTerminal(), self.ttab.tokens.values()))
+    
+    def getNonTerminal(self):
+        return list(filter(lambda t : t.isNonTerminal(), self.ttab.tokens.values()))
+
     def analyze(self, sentence : list, prority_resolver = None) -> tuple:
         def value_zero(actions_list):
             return 0
@@ -355,6 +384,7 @@ class LRAnalyzer:
                 raise Exception("Unexpected LRAnalyze.ActionType Value: {}".find(action_type))
         
         auto_append("Analyze End")
+        # output_list is (list of int, list of token, str)
         return (analyze_status, output_list)
     
     # generate the closures set and the states transition table
@@ -500,22 +530,19 @@ class LRAnalyzer:
             state += 1
 
 
-        print("Action")
-
-        for s in action:
-            for t in action[s]:
-                print("{} -- {} -- {}".format(s, t, action[s][t]))
-
-        print("Action")
         return conflicts_list 
     
-    def getSentenceByStr(self, s:str) -> list:
+    def getSentenceByStr(self, s:str):
         ret_tokens = []
+        ret_status = True
         for single_str in s.strip().split(' '):
             if len(single_str) == 0:
                 continue
+            if not self.ttab.inTable(single_str):
+                ret_status = False
+                break
             ret_tokens.append(self.ttab.getToken(single_str))
-        return ret_tokens
+        return (ret_status, ret_tokens)
 
         
     def getClosures(self) -> list:
@@ -529,6 +556,27 @@ class LRAnalyzer:
     
     def getAction(self) -> dict:
         return self.action_table
+    
+    def debug_log(self):
+        
+        print("CLOSURES_JUMP_TABLE_START")
+        l = list(self.closures_jump_table.keys())
+        l.sort()
+        for x in l:
+            print(x, self.closures_jump_table[x])
+        print("CLOSURES_JUMP_TABLE_END")
+
+
+        print("ACTION_START")
+        for s in self.action_table:
+            for t in self.action_table[s]:
+                print("{} -- {} -- {}".format(s, t, self.action_table[s][t]))
+        print("ACTION_END")
+
+        print("CONFLICTS_START")
+        for x in self.conflict_list:
+            print(x)
+        print("CONFLICTS_END")
 
     def __str__(self) -> str:
         return str(self.productions) + ", " + str(self.ttab) + str(self.items)
@@ -536,18 +584,159 @@ class LRAnalyzer:
     def __repr__(self) -> str:
         return self.__str()
 
+class MainWindow(QMainWindow):
+
+    def __init__(self):
+        super(MainWindow, self).__init__()
+        ui_file_name = "lab3.ui"
+        ui_file = QFile(ui_file_name)
+        if not ui_file.open(QIODevice.ReadOnly):
+            print("Cannot open {}: {}".format(ui_file_name, ui_file.errorString()))
+            sys.exit(-1)
+        loader = QUiLoader()
+        window = loader.load(ui_file)
+        ui_file.close()
+        self.setCentralWidget(window)
+
+        self.textedit_focus_status = False
+        self.button:QPushButton = window.analysis
+        self.button.clicked.connect(self.button_clicked)
+        self.textedit:QTextEdit = window.productions
+        self.lineedit:QLineEdit = window.sentence
+        self.label:QLabel = window.check_status
+        self.sentence_status_label:QLabel = window.sentence_status
+        
+        self.tabwidget:QTabWidget = window.tabwidget
+
+    @Slot()
+    def button_clicked(self):
+        pstrs = self.textedit.toPlainText().strip().split("\n")
+        senstr = self.lineedit.text().strip()
+        lra = LRAnalyzer(pstrs, "?", "START", "#")
+        lra.debug_log()
+
+        if lra.checkLR():
+            self.label.setText("LR(1) check passed")
+        else:
+            self.label.setText("LR(1) check failed, but still can be used to parse")
+        
+        (sentence_status, sentence) = lra.getSentenceByStr(senstr)
+
+        if not sentence_status:
+            self.sentence_status_label.setText("Unexpected tokens in the Sentence")
+            return
+        
+        analyze_status, out_list = lra.analyze(sentence)
+
+        if analyze_status:
+            self.sentence_status_label.setText("Sentence Accepted")
+        else: 
+            self.sentence_status_label.setText("Sentence Not Accepted")
+
+        # left to right is:
+        # PROCESS, ACTION GOTO, DFA
+
+        self.tabwidget.clear()
+
+        process_tab = QTableWidget(len(out_list), 4)
+        i = 0
+        for (s,t,r,info) in out_list:
+            s_item = QTableWidgetItem(str(s))
+            process_tab.setItem(i, 0, s_item)
+            
+            t_str = [x.val for x in t]
+            t_item = QTableWidgetItem(str(t_str))
+            process_tab.setItem(i, 1, t_item)
+            r_str = [x.val for x in r]
+            r_item = QTableWidgetItem(str(r_str))
+            process_tab.setItem(i, 2, r_item)
+
+            i_item = QTableWidgetItem(str(info))
+            process_tab.setItem(i, 3, i_item)
+            i += 1
+        process_tab.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        print(out_list)
+        process_tab.setHorizontalHeaderLabels(["States", "Tokens", "Inputs", "Actions"])
+        self.tabwidget.addTab(process_tab,"PROCESS")
+
+        states_num = lra.stateCount()
+        nterm_num = lra.nonTerminalCount()
+        term_num = lra.terminalCount()
+
+        nterms = [x.val for x in lra.getNonTerminal()]
+        nterms.sort()
+        terms = [x.val for x in lra.getTerminal()]
+        terms.sort()
+
+        action_tab = QTableWidget(states_num, term_num)
+
+        print(terms)
+        print(nterms)
+        print(term_num)
+        i = 0
+        while i < states_num:
+            j = 0
+            while j < term_num:
+                action = lra.action_table[i][lra.ttab.getToken(terms[j])]
+                if len(action) == 0:
+                    pass
+                else:
+                    item_str = ""
+                    tmp_str_tab = ["Shift", "Reduce"]
+                    t,p = action[0]
+                    if lra.ttab.getToken(terms[j]) in lra.closures_jump_table[i]:
+                        item_str = item_str + str(lra.closures_jump_table[i][lra.ttab.getToken(terms[j])])
+                    tmp_action = [(tmp_str_tab[t], p) for (t,p) in action]
+                    item = QTableWidgetItem(item_str + str(tmp_action))
+                    action_tab.setItem(i,j, item)
+                j += 1
+            i = i + 1
+        
+        action_tab.setHorizontalHeaderLabels(terms)
+        self.tabwidget.addTab(action_tab, "ACTION")
+
+
+        goto_tab = QTableWidget(states_num, nterm_num)
+
+        i = 0
+        while i < states_num:
+            j = 0
+            while j < nterm_num:
+                if lra.ttab.getToken(nterms[j]) in lra.closures_jump_table[i]:
+                    print("in")
+                    item = QTableWidgetItem(str(lra.closures_jump_table[i][lra.ttab.getToken(nterms[j])]))
+                    goto_tab.setItem(i, j, item)
+                else:
+                    pass
+                j = j + 1
+            i = i + 1
+        
+        goto_tab.setHorizontalHeaderLabels(nterms)
+        self.tabwidget.addTab(goto_tab, "GOTO")
+        lra = None
+
+
 if __name__ == "__main__":
     
+    '''
     f = open("/home/doot/projects/compiler/lab3/testcase/case3.txt", "r")
     plist = f.readlines()
+    f.close()
     lra = LRAnalyzer(plist, "?", "START", "END")
+    lra.debug_log()
     sentence = lra.getSentenceByStr("i * i + i + i + i")
 
-    (status, out_str)= lra.analyze(sentence)
+    (status, out_str) = lra.analyze(sentence)
     print(status)
     for x in out_str:
         print(x)
 
+    '''
+    app = QApplication(sys.argv)
+
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
 
 
     
