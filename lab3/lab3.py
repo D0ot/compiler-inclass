@@ -1,7 +1,7 @@
-from os import ttyname
+from os import stat, ttyname
 import sys
-from typing import ItemsView, Type
-from copy import copy
+from typing import FrozenSet, ItemsView, Type
+from copy import Error, copy, deepcopy
 
 
 class Token:
@@ -48,7 +48,7 @@ class TokenTable:
             self.tokens[token.val] = token
             return token
     
-    def getToken(self, t:str):
+    def getToken(self, t:str) -> Token:
         if t in self.tokens:
             return self.tokens[t]
         else:
@@ -56,6 +56,7 @@ class TokenTable:
 
     def isTerminal(self, t:str):
         return t in self.tokens and self.tokens[t].type == Token.TypeTerminal
+
     def isNonTerminal(self, t:str):
         return t in self.tokens and self.tokens[t].type == Token.TypeNonTerminal
     
@@ -129,12 +130,20 @@ class Item:
         self.right_tokens = right_tokens
         self.preview_token = preview_token
     
+    # used to calculate closure
     def closureExtendable(self) -> bool:
         return self.pos < len(self.right_tokens) and self.right_tokens[self.pos].isNonTerminal()
 
+    # used to calculate GO(...) function
     def closureGoable(self) -> bool:
         return self.pos != len(self.right_tokens)
-
+    
+    def canShift(self) -> bool:
+        return self.pos < len(self.right_tokens) and self.right_tokens[self.pos].isTerminal()
+    
+    def canReduce(self) -> bool:
+        return self.pos == len(self.right_tokens)
+    
     def __str__(self) -> str:
         outstr = "[ {} -> ".format(self.left_token.val)
         i = 0
@@ -237,13 +246,17 @@ class FirstSets:
 
 
 class LRAnalyzer:
+
+    class ActionType:
+        Shift = 0
+        Reduce = 1
+
     ''' productions are special, indexed by string '''
     productions = {}
 
     ttab = TokenTable()
     items = {}
-    closures = {}
-
+    lr_check = True
 
     def __init__(self, pstr: list, eplision_str, argument_str, guard_str):
 
@@ -270,36 +283,82 @@ class LRAnalyzer:
         self.first_sets.nullable[self.guard_token] = False
 
         self.generateClosureSet()
-        
-    
-    def analyze(self, sentence : str):
-        return False
-    
-    def generateItems(self):
-        non_terminals = []
-        for x in self.ttab.tokens.keys():
-            if self.ttab.tokens[x].type == Token.TypeTerminal:
-                non_terminals.append(self.ttab.tokens[x])
-        
-        for x in self.ttab.tokens.keys():
-            token:Token = self.ttab.getToken(x)
-            if token.type == Token.TypeNonTerminal:
-                prod:Production = self.productions[token.val]
+        conflict_list = self.generateAction()
+        if len(conflict_list) != 0:
+            lr_check = False
 
-                tmp = []
-                for right_strs in prod.rights:
-                    str_cnt = len(right_strs)
-                    i = 0
-                    while i <= str_cnt:
-                        for c in non_terminals:
-                            right_tokens = [self.ttab.getToken(x) for x in right_strs]
-                            item = Item(self.ttab.getToken(prod.left), right_tokens, i, c)
-                            tmp.append(item)
-                        i = i + 1
-                self.items[self.ttab.getToken(prod.left)] = tmp
+
+        l = list(self.closures_jump_table.keys())
+        l.sort()
+        for x in l:
+            print(x, self.closures_jump_table[x])
+
+
+    def checkLR(self):
+        return self.lr_check
     
+    def analyze(self, sentence : list, prority_resolver = None) -> tuple:
+        def value_zero(actions_list):
+            return 0
+        
+        if prority_resolver == None:
+            prority_resolver = value_zero
+
+
+        sentence = sentence + [self.guard_token]
+        sentence_len = len(sentence)
+        sentence_pos = 0
+
+        analyze_status = False
+        output_list = []
+
+        def append_output_list(s_stack, t_stack, remaining_sentence, info):
+            output_list.append((copy(s_stack),copy(t_stack), copy(remaining_sentence), info))
+
+        state_stack = [0]
+        token_stack = [self.guard_token]
+
+        def auto_append(info):
+            append_output_list(state_stack, token_stack, sentence[sentence_pos:], info)
+        
+        while len(state_stack) != 0 and len(token_stack) != 0 and sentence_pos < sentence_len:
+
+            cur_token:Token = sentence[sentence_pos]
+            cur_state = state_stack[-1]
+            actions_list = self.action_table[cur_state][cur_token]
+            if len(actions_list) == 0:
+                analyze_status = False
+                break
+
+            (action_type, item) = actions_list[prority_resolver(actions_list)]
+
+            if action_type == LRAnalyzer.ActionType.Shift:
+                auto_append(str(item) + ", Shift")
+                next_state = self.closures_jump_table[cur_state][cur_token]
+                state_stack.append(next_state)
+                token_stack.append(cur_token)
+                sentence_pos += 1
+            elif action_type == LRAnalyzer.ActionType.Reduce:
+                item:Item
+
+                auto_append(str(item) + ", Reduce")
+                pop_len = len(item.right_tokens)
+                token_stack = token_stack[:-pop_len]
+                state_stack = state_stack[:-pop_len]
+
+                if item.left_token == self.argument_token:
+                    analyze_status = True
+                    break
+                token_stack.append(item.left_token)
+                state_stack.append(self.closures_jump_table[state_stack[-1]][item.left_token])
+            else:
+                raise Exception("Unexpected LRAnalyze.ActionType Value: {}".find(action_type))
+        
+        auto_append("Analyze End")
+        return (analyze_status, output_list)
+    
+    # generate the closures set and the states transition table
     def generateClosureSet(self):
-
         def closureHelper(iset:frozenset):
             item_stack = []
             item_stack.extend(iset)
@@ -336,6 +395,7 @@ class LRAnalyzer:
 
             for item in iset:
                 item : Item
+                
                 if item.closureGoable():
                     new_item = goHelperStub(item)
                     next_token = item.right_tokens[item.pos]
@@ -345,14 +405,14 @@ class LRAnalyzer:
 
             jmp_tmp = {}
             for x in ret_tmp:
-                colsure_tmp = closureHelper(frozenset(ret_tmp[x]))
-                jmp_tmp[x] = colsure_tmp
+                jmp_tmp[x] = closureHelper(frozenset(ret_tmp[x]))
             return jmp_tmp
         
         start_item = Item(self.argument_token, [self.orginal_start_token], 0, self.guard_token)
         start_set = frozenset([start_item])
         first_closure = closureHelper(start_set)
 
+        
         # used to temporary sotrage
         closure_stack = [first_closure]
 
@@ -365,28 +425,110 @@ class LRAnalyzer:
         closures_jump_table = {}
 
         closures_storage = [first_closure]
-
-        closure_hash = [first_closure.__hash__()]
-
+        
+        goto_table = {}
         while len(closure_stack) != 0:
             cur = closure_stack.pop()
             closure_go_dict = GoHelper(cur)
             state = closures_storage.index(cur)
             if not state in closures_jump_table.keys():
                 closures_jump_table[state] = {}
+                goto_table[state] = {}
             
             for k in closure_go_dict.keys():
                 if not closure_go_dict[k] in closures_unique:
                     closures_storage.append(closure_go_dict[k])
                     closures_unique.add(closure_go_dict[k])
                     closure_stack.append(closure_go_dict[k])
-                    closure_hash.append(closure_go_dict[k].__hash__())
                 
                 next_state = closures_storage.index(closure_go_dict[k])
                 closures_jump_table[state][k] = next_state
+                if k.isNonTerminal():
+                    goto_table[state][k] = next_state
         
         self.closures_storage = closures_storage
         self.closures_jump_table = closures_jump_table
+        self.goto_table = goto_table
+
+    
+    # return true if the grammar satisify the LR(1)
+    # action table will be a dict of dicts of list
+    # return type : (LR(1) check result, list of indics of closures which conflict)
+    def generateAction(self) -> tuple:
+        action = {}
+        terminals_tmp = []
+        for k in self.ttab.tokens:
+            if self.ttab.getToken(k).isTerminal():
+                terminals_tmp.append(self.ttab.getToken(k))
+
+        closures_num = len(self.closures_storage)
+        state = 0
+        while state < closures_num:
+            action[state] = {}
+            for terminal in terminals_tmp:
+                action[state][terminal] = []
+            
+            cur_closure = self.closures_storage[state]
+
+            for item in cur_closure:
+                item:Item
+                if item.canShift():
+                    action[state][item.right_tokens[item.pos]].append((LRAnalyzer.ActionType.Shift, item))
+                elif item.canReduce():
+                    action[state][item.preview_token].append((LRAnalyzer.ActionType.Reduce, item))
+
+            state += 1
+        self.action_table = action
+
+        # check conflicts in action table
+
+        conflicts_list = []
+        state = 0
+        while state < closures_num:
+            for terminal in action[state]:
+                action_list = action[state][terminal]
+                reduce_cnt = 0
+                shift_cnt = 0
+                for (action_type, item) in action_list:
+                    if action_type == LRAnalyzer.ActionType.Reduce:
+                        reduce_cnt += 1
+                    if action_type == LRAnalyzer.ActionType.Shift:
+                        shift_cnt += 1
+                
+                if (reduce_cnt > 1) or (reduce_cnt > 0 and shift_cnt > 0):
+                    conflicts_list.append((state, terminal))
+            state += 1
+
+
+        print("Action")
+
+        for s in action:
+            for t in action[s]:
+                print("{} -- {} -- {}".format(s, t, action[s][t]))
+
+        print("Action")
+        return conflicts_list 
+    
+    def getSentenceByStr(self, s:str) -> list:
+        ret_tokens = []
+        for single_str in s.strip().split(' '):
+            if len(single_str) == 0:
+                continue
+            ret_tokens.append(self.ttab.getToken(single_str))
+        return ret_tokens
+
+        
+    def getClosures(self) -> list:
+        return self.closures_storage
+    
+    def getJumpTable(self) -> dict:
+        return self.closures_jump_table
+    
+    def getGOTO(self) -> dict:
+        return self.goto_table
+    
+    def getAction(self) -> dict:
+        return self.action_table
 
     def __str__(self) -> str:
         return str(self.productions) + ", " + str(self.ttab) + str(self.items)
@@ -395,21 +537,18 @@ class LRAnalyzer:
         return self.__str()
 
 if __name__ == "__main__":
-    f = open("/home/doot/projects/compiler/lab3/testcase/case2.txt", "r")
+    
+    f = open("/home/doot/projects/compiler/lab3/testcase/case3.txt", "r")
     plist = f.readlines()
     lra = LRAnalyzer(plist, "?", "START", "END")
+    sentence = lra.getSentenceByStr("i * i + i + i + i")
 
-    for x in lra.first_sets.first_sets:
-        print(x, lra.first_sets.first_sets[x])
+    (status, out_str)= lra.analyze(sentence)
+    print(status)
+    for x in out_str:
+        print(x)
+
+
+
     
-    for x in lra.first_sets.nullable:
-        print(x, lra.first_sets.nullable[x])
-    
-    # print items
-    '''for x in lra.items:
-        for y in lra.items[x]:
-            print(y)'''
-    
-    for x in lra.productions:
-        print(lra.productions[x])
     
