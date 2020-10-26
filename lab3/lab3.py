@@ -2,8 +2,12 @@ import sys
 from copy import copy
 
 from PySide2.QtCore import *
+from PySide2.QtGui import QPixmap
 from PySide2.QtWidgets import *
 from PySide2.QtUiTools import *
+from graphviz import Digraph
+from graphviz.backend import render
+from graphviz.dot import Graph
 
 class Token:
     '''Token is represented as a string internally'''
@@ -713,7 +717,38 @@ class MainWindow(QMainWindow):
         
         goto_tab.setHorizontalHeaderLabels(nterms)
         self.tabwidget.addTab(goto_tab, "GOTO")
-        lra = None
+
+
+        dfa_tab = QLabel()
+
+        graph = Digraph("DFA", format="png")
+
+        final_state = set()
+        render_tuple = []
+        for state in lra.closures_jump_table:
+            flag = True 
+            for token in lra.closures_jump_table[state]:
+                flag = False 
+                next_state = lra.closures_jump_table[state][token]
+                tmp_tuple = (state, next_state, token.val)
+                render_tuple.append(tmp_tuple)
+            if flag:
+                final_state.add(state)
+
+        for (x,y,t) in render_tuple:
+            if y in final_state:
+                graph.attr("node", shape="doublecircle")
+                graph.node(str(y))
+            graph.attr("node", shape= "circle")
+            graph.edge(str(x), str(y), label=t)
+        graph.render()
+
+
+        pic = QPixmap("./DFA.gv.png")
+        dfa_tab.setPixmap(pic)
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(dfa_tab)
+        self.tabwidget.addTab(scroll_area, "DFA")
 
 
 if __name__ == "__main__":
