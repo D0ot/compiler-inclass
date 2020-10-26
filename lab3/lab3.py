@@ -6,8 +6,6 @@ from PySide2.QtGui import QPixmap
 from PySide2.QtWidgets import *
 from PySide2.QtUiTools import *
 from graphviz import Digraph
-from graphviz.backend import render
-from graphviz.dot import Graph
 
 class Token:
     '''Token is represented as a string internally'''
@@ -244,6 +242,10 @@ class FirstSets:
                     if old_len != len(self.first_sets[left_token]) or old_nullable != self.nullable[left_token]:
                         changed_in_this_iter = True
 
+        for x in self.first_sets:
+            if eplision in self.first_sets[x]:
+                self.first_sets[x].remove(eplision)
+                
 
     def queryFirst(self, token):
         if token in self.first_sets:
@@ -347,6 +349,7 @@ class LRAnalyzer:
 
         def append_output_list(s_stack, t_stack, remaining_sentence, info):
             output_list.append((copy(s_stack),copy(t_stack), copy(remaining_sentence), info))
+            print(output_list[-1])
 
         state_stack = [0]
         token_stack = [self.guard_token]
@@ -375,13 +378,14 @@ class LRAnalyzer:
                 item:Item
 
                 auto_append(str(item) + ", Reduce")
-                pop_len = len(item.right_tokens)
-                token_stack = token_stack[:-pop_len]
-                state_stack = state_stack[:-pop_len]
+                if item.right_tokens[0] != self.eplision:
+                    pop_len = len(item.right_tokens)
+                    token_stack = token_stack[:-pop_len]
+                    state_stack = state_stack[:-pop_len]
 
-                if item.left_token == self.argument_token:
-                    analyze_status = True
-                    break
+                    if item.left_token == self.argument_token:
+                        analyze_status = True
+                        break
                 token_stack.append(item.left_token)
                 state_stack.append(self.closures_jump_table[state_stack[-1]][item.left_token])
             else:
@@ -411,6 +415,8 @@ class LRAnalyzer:
                         candi_tokens = [self.ttab.getToken(x) for x in candi_strs]
                         for preview_token in sts_fst:
                             new_item = Item(next_token, candi_tokens, 0, preview_token)
+                            if(candi_tokens[0] == self.eplision_token) :
+                                new_item.pos = 1
                             if new_item in ret_set:
                                 continue
                             else:
@@ -735,6 +741,8 @@ class MainWindow(QMainWindow):
             if flag:
                 final_state.add(state)
 
+        graph.attr("node", shape="doublecircle")
+        graph.node("0")
         for (x,y,t) in render_tuple:
             if y in final_state:
                 graph.attr("node", shape="doublecircle")
